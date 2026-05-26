@@ -28,8 +28,11 @@
 From PyPI:
 
 ```bash
-pip install stable-worldmodel
+pip install stable-worldmodel            # base only
+pip install 'stable-worldmodel[all]'     # + training, environments, and data formats
 ```
+
+LeRobot dataset support is a separate opt-in extra (requires Python 3.12+): `pip install 'stable-worldmodel[lerobot]'`.
 
 From source (development):
 
@@ -37,7 +40,7 @@ From source (development):
 git clone https://github.com/galilai-group/stable-worldmodel
 cd stable-worldmodel
 uv venv --python=3.10 && source .venv/bin/activate
-uv sync --all-extras --group dev
+uv sync --extra all --group dev
 ```
 
 Datasets and checkpoints are stored under `$STABLEWM_HOME` (defaults to `~/.stable_worldmodel/`). Override the variable to point at your preferred storage location.

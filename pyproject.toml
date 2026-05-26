@@ -36,7 +36,7 @@ swm = "stable_worldmodel.cli:app"
 [project.optional-dependencies]
 train = [
     "transformers>=4.50.0",
-    "stable-pretraining",
+    "stable-pretraining>=0.1.7",
     "hydra-core",
     "hydra-submitit-launcher",
     "wandb",
@@ -57,16 +57,24 @@ env = [
 ]
 
 format = [
-    "lerobot>=0.5.0; python_version >= '3.12'",
     "h5py",
     "hdf5plugin",
     "decord",
     "imageio[ffmpeg]",
 ]
 
+lerobot = [
+    "lerobot>=0.5.0; python_version >= '3.12'",
+]
+
+all = [
+    "stable-worldmodel[train,env,format]",
+]
+
 [dependency-groups]
 dev = [
   "ipdb",
+  "pre-commit",
   "pytest",
   "pytest-cov>=7.0.0",
   "ruff",

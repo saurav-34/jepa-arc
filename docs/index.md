@@ -22,12 +22,12 @@ Stable World-Model is an open-source library to conduct world model research.  Y
 === "uv (all dependencies)"
 
         :::bash
-        uv add stable-worldmodel --all-extras
+        uv add 'stable-worldmodel[all]'
 
 === "pip (all dependencies)"
 
         :::bash
-        pip install stable-worldmodel[env, train]
+        pip install 'stable-worldmodel[all]'
 
 
 !!! note ""
@@ -47,7 +47,7 @@ git clone https://github.com/galilai-group/stable-worldmodel
 cd stable-worldmodel/
 uv venv --python=3.10
 source .venv/bin/activate
-uv sync --all-extras --group dev
+uv sync --extra all --group dev
 ```
 
 !!! warning ""
