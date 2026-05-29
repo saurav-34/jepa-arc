@@ -67,3 +67,6 @@ Thumbs.db
 
 # MkDocs
 site/
+
+# Resources
+resources/

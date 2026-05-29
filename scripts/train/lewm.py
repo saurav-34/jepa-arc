@@ -65,6 +65,11 @@ def lejepa_forward(self, batch, stage, cfg):
     # Replace NaN values with 0 (occurs at sequence boundaries)
     batch['action'] = torch.nan_to_num(batch['action'], 0.0)
 
+    # Lance stores all tabular columns as float32; Embedding needs Long indices
+    target = cfg.model.action_encoder.get('_target_', '')
+    if 'Embedding' in target:
+        batch['action'] = batch['action'].squeeze(-1).long()
+
     output = self.model.encode(batch)
 
     emb = output['emb']  # (B, T, D)
@@ -117,9 +122,11 @@ def run(cfg):
             normalizer = get_column_normalizer(dataset, col, col)
             transforms.append(normalizer)
 
-        cfg.model.action_encoder.input_dim = (
-            cfg.data.dataset.frameskip * dataset.get_dim('action')
-        )
+        target = cfg.model.action_encoder.get('_target_', '')
+        if 'Embedding' not in target:
+            cfg.model.action_encoder.input_dim = (
+                cfg.data.dataset.frameskip * dataset.get_dim('action')
+            )
 
     transform = spt.data.transforms.Compose(*transforms)
     dataset.transform = transform

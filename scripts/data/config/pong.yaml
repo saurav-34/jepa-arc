@@ -1,0 +1,8 @@
+dataset:
+  # The loader will automatically detect the .lance extension and route it 
+  # through the highly optimized Lance reader
+  name: datasets/pong_offline.lance
+  frameskip: 1
+  keys_to_load:
+    - pixels
+    - action
