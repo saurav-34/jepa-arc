@@ -5,6 +5,7 @@ RAM addresses:
 """
 
 import argparse
+import io
 import os
 import random
 
@@ -14,9 +15,16 @@ import gymnasium as gym
 import lance
 import numpy as np
 import pyarrow as pa
+from PIL import Image
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_atari_env
 from stable_baselines3.common.vec_env import VecFrameStack
+
+
+def encode_frame(frame: np.ndarray, jpeg_quality: int = 95) -> bytes:
+    buf = io.BytesIO()
+    Image.fromarray(frame.astype(np.uint8)).save(buf, format='JPEG', quality=jpeg_quality)
+    return buf.getvalue()
 
 gym.register_envs(ale_py)
 
@@ -30,7 +38,6 @@ args = parser.parse_args()
 LOCAL_CHECKPOINT = os.path.expanduser("~/.stable_worldmodel/ppo-ALE-Pong-v5.zip")
 
 IMG_SIZE = 224
-image_size = IMG_SIZE * IMG_SIZE * 3
 
 def load_model():
     if os.path.exists(LOCAL_CHECKPOINT):
@@ -73,9 +80,10 @@ vec_env = VecFrameStack(vec_env, n_stack=4)
 ale = vec_env.envs[0].unwrapped.ale
 
 schema = pa.schema([
-    pa.field("episode", pa.int32()),
+    pa.field("episode_idx", pa.int32()),
+    pa.field("step_idx", pa.int32()),
     pa.field("action", pa.int32()),
-    pa.field("pixels", pa.list_(pa.uint8(), image_size)),
+    pa.field("pixels", pa.binary()),
     pa.field("ball_x", pa.float32()),
     pa.field("ball_y", pa.float32()),
     pa.field("ball_vx", pa.float32()),
@@ -111,7 +119,7 @@ while current_frames < args.frames:
 
     # 3. Save the aligned step data
     ep_actions.append(action)
-    ep_pixels.append(frame.flatten())
+    ep_pixels.append(encode_frame(frame))
     ep_ball_x.append(float(state['ball_x']))
     ep_ball_y.append(float(state['ball_y']))
     ep_player_y.append(float(state['player_y']))
@@ -130,10 +138,12 @@ while current_frames < args.frames:
         ep_vx = [v if abs(v) <= MAX_BALL_SPEED else 0.0 for v in ep_vx]
         ep_vy = [v if abs(v) <= MAX_BALL_SPEED else 0.0 for v in ep_vy]
 
+        ep_len = len(ep_actions)
         batch = pa.RecordBatch.from_arrays([
-            pa.array([ep] * len(ep_actions), type=pa.int32()),
+            pa.array([ep] * ep_len, type=pa.int32()),
+            pa.array(list(range(ep_len)), type=pa.int32()),
             pa.array(ep_actions, type=pa.int32()),
-            pa.array(ep_pixels, type=pa.list_(pa.uint8(), image_size)),
+            pa.array(ep_pixels, type=pa.binary()),
             pa.array(ep_ball_x, type=pa.float32()),
             pa.array(ep_ball_y, type=pa.float32()),
             pa.array(ep_vx, type=pa.float32()),
