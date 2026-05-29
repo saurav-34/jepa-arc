@@ -1,7 +1,7 @@
 dataset:
   num_steps: ${eval:'${wm.num_preds} + ${wm.history_size}'}
   frameskip: 1
-  name: pong_offline.lance
+  name: pong_with_state.lance
   keys_to_load:
     - pixels
     - action
