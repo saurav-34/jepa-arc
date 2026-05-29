@@ -68,5 +68,5 @@ Thumbs.db
 # MkDocs
 site/
 
-# Resources
-resources/
+# Resources (symlink created by pufferlib pointing into .venv)
+resources

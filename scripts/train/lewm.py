@@ -115,14 +115,16 @@ def run(cfg):
     ]
 
     with open_dict(cfg):
+        target = cfg.model.action_encoder.get('_target_', '')
         for col in cfg.data.dataset.keys_to_load:
             if col.startswith('pixels'):
+                continue
+            if col == 'action' and 'Embedding' in target:
                 continue
 
             normalizer = get_column_normalizer(dataset, col, col)
             transforms.append(normalizer)
 
-        target = cfg.model.action_encoder.get('_target_', '')
         if 'Embedding' not in target:
             cfg.model.action_encoder.input_dim = (
                 cfg.data.dataset.frameskip * dataset.get_dim('action')
