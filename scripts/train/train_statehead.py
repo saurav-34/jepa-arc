@@ -15,11 +15,14 @@ import argparse
 import os
 from pathlib import Path
 
+import io
+
 import lance
 import numpy as np
 import torch
 import torch.nn as nn
 from einops import rearrange
+from PIL import Image
 from torch.utils.data import DataLoader, Dataset, random_split
 
 from stable_worldmodel.wm.utils import load_pretrained, save_pretrained
@@ -52,22 +55,26 @@ def precompute_embeddings(model, dataset_path, cache_path, device, batch_size=64
     n = ds.count_rows()
 
     model.encoder.eval().to(device)
+    model.projector.eval().to(device)
 
     embeddings = np.zeros((n, EMBED_DIM), dtype=np.float32)
 
     for start in range(0, n, batch_size):
         end = min(start + batch_size, n)
         tbl = ds.take(list(range(start, end)), columns=['pixels'])
-        pixels = np.array(tbl['pixels'].to_pylist(), dtype=np.uint8)
-        pixels = pixels.reshape(end - start, IMG_SIZE, IMG_SIZE, 3)
-        pixels = pixels.transpose(0, 3, 1, 2).astype(np.float32) / 255.0
+        frames = []
+        for jpeg_bytes in tbl['pixels'].to_pylist():
+            img = Image.open(io.BytesIO(bytes(jpeg_bytes))).resize((IMG_SIZE, IMG_SIZE))
+            frames.append(np.array(img, dtype=np.float32))
+        pixels = np.stack(frames).transpose(0, 3, 1, 2) / 255.0
         pixels = (pixels - IMAGENET_MEAN[None, :, None, None]) / IMAGENET_STD[None, :, None, None]
 
         with torch.no_grad():
             x = torch.from_numpy(pixels).to(device)
             out = model.encoder(x.to(next(model.encoder.parameters()).dtype),
                                 interpolate_pos_encoding=True)
-            emb = out.last_hidden_state[:, 0].float().cpu().numpy()
+            cls = out.last_hidden_state[:, 0]
+            emb = model.projector(cls).float().cpu().numpy()
 
         embeddings[start:end] = emb
 
@@ -103,6 +110,8 @@ def main():
     for p in model.parameters():
         p.requires_grad_(False)
     model.eval()
+    model.encoder.eval()
+    model.projector.eval()
 
     # pre-compute or load cached embeddings
     cache_path = args.embed_cache or args.dataset.replace('.lance', '_embeddings.npy')
@@ -124,7 +133,8 @@ def main():
     print(f"State std:  {state_std}")
 
     # save normalization stats alongside the model
-    cache_dir = Path(os.path.expanduser("~/.stable_worldmodel/checkpoints/statehead"))
+    from stable_worldmodel.data.utils import get_cache_dir
+    cache_dir = get_cache_dir(sub_folder='checkpoints') / 'statehead'
     cache_dir.mkdir(parents=True, exist_ok=True)
     np.save(cache_dir / "state_mean.npy", state_mean)
     np.save(cache_dir / "state_std.npy", state_std)
@@ -136,8 +146,8 @@ def main():
     train_set, val_set = random_split(dataset, [n_train, n_val],
                                       generator=torch.Generator().manual_seed(42))
 
-    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=2)
-    val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=2)
+    train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=0)
+    val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
     # state head: single linear layer (~1158 params)
     state_head = nn.Linear(EMBED_DIM, STATE_DIM).to(args.device)
@@ -183,7 +193,25 @@ def main():
             print(f"           ↑ saved (best val={best_val_loss:.4f})")
 
     print(f"\nDone. Best val loss: {best_val_loss:.4f}")
-    print(f"State head saved to {cache_dir}/statehead.pt")
+
+    # R² per state variable
+    state_head.load_state_dict(torch.load(cache_dir / "statehead.pt"))
+    state_head.eval()
+    all_preds, all_targets = [], []
+    with torch.no_grad():
+        for emb, target in val_loader:
+            all_preds.append(state_head(emb.to(args.device)).cpu().numpy())
+            all_targets.append(target.numpy())
+    all_preds = np.concatenate(all_preds) * state_std + state_mean
+    all_targets = np.concatenate(all_targets) * state_std + state_mean
+    print("\nR² per state variable:")
+    for i, col in enumerate(STATE_COLS):
+        ss_res = ((all_targets[:, i] - all_preds[:, i]) ** 2).sum()
+        ss_tot = ((all_targets[:, i] - all_targets[:, i].mean()) ** 2).sum()
+        r2 = 1 - ss_res / ss_tot
+        print(f"  {col:12s}: R² = {r2:.4f}")
+
+    print(f"\nState head saved to {cache_dir}/statehead.pt")
     print(f"Normalization stats saved to {cache_dir}/state_{{mean,std}}.npy")
 
 

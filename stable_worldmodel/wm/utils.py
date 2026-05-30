@@ -88,7 +88,8 @@ def load_pretrained(name: str, cache_dir: str = None, extra_args=None):
                 d = d.setdefault(part, {})
             d[parts[-1]] = value
 
-    model = instantiate(config)
+    model_cfg = config.get('model', config)
+    model = instantiate(model_cfg)
     model.load_state_dict(state_dict)
     return model
 
