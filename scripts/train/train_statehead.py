@@ -1,8 +1,11 @@
 """Train a linear state head on top of a frozen LeWM encoder.
 
 Pipeline:
-  frozen ViT encoder → 192-dim CLS embedding → linear head → 6-dim game state
+  frozen ViT encoder → projector → 192-dim projected embedding → linear head → 6-dim game state
   (ball_x, ball_y, ball_vx, ball_vy, player_y, opp_y)
+
+  Embeddings are taken from projector(encoder_CLS) so the statehead operates in the
+  same space as pred_proj(z_next) used during LePong inference.
 
 Stage 1: Pre-compute and cache all encoder embeddings (runs once).
 Stage 2: Train linear head on cached embeddings.
