@@ -30,14 +30,14 @@ gym.register_envs(ale_py)
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--frames", type=int, default=50000)
-parser.add_argument("--out", type=str, default="datasets/pong_with_state.lance")
+parser.add_argument("--out", type=str, default="datasets/pong_64x64.lance")
 parser.add_argument("--train-steps", type=int, default=1_000_000)
 parser.add_argument("--epsilon", type=float, default=0.30, help="30% chance to take a random action for better WM exploration")
 args = parser.parse_args()
 
 LOCAL_CHECKPOINT = os.path.expanduser("~/.stable_worldmodel/ppo-ALE-Pong-v5.zip")
 
-IMG_SIZE = 224
+IMG_SIZE = 64
 
 def load_model():
     if os.path.exists(LOCAL_CHECKPOINT):
