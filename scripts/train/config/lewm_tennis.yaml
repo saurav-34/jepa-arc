@@ -1,10 +1,22 @@
 defaults:
-  - _self_
   - launcher: local
   - data: tennis
+  - _self_          # last, so this file's wandb block overrides launcher/local.yaml's
 
 output_model_name: lewm_tennis
 subdir: ${hydra:job.id}
+
+# wandb enabled by default for this config (launcher/local.yaml disables it).
+# entity must be YOUR wandb account, not the upstream `stable-wm` team.
+wandb:
+  enabled: true
+  config:
+    entity: ssaurav3425-iiser-bhopal   # your wandb default entity (not the HF username)
+    project: tennis-jepa
+    name: ${output_model_name}
+    id: ${subdir}
+    resume: allow
+    log_model: False
 
 num_workers: 6
 train_split: 0.9
