@@ -8,9 +8,10 @@ Why this exists (vs collect_tennis_with_state.py which uses single-agent ALE/Ten
   so the two datasets are compatible, but this one is collected in genuine 2-player
   dynamics: no built-in CPU opponent, both sides agent-driven.)
 
-Convention: **JEPA controls `first_0`** — its action is stored as `action` (what the
-world model is conditioned on). The opponent `second_0` (the human at play time) is
-stored as `action_opp` for reference. At play, send JEPA's action as `first_0`.
+Convention: **JEPA controls `second_0` = the TOP player** — its action is stored as
+`action` (what the world model is conditioned on). The human is `first_0` = the BOTTOM
+player, stored as `action_human` for reference. At play, send JEPA's action as `second_0`.
+(Verified on this machine: driving first_0 moves the bottom sprite, second_0 the top.)
 
 Frameskip: tennis_v3 advances 1 ALE frame per env.step. We hold each action for
 FRAMESKIP env-steps so one recorded transition = FRAMESKIP ALE frames, matching the
@@ -58,7 +59,7 @@ args = parser.parse_args()
 
 IMG_SIZE = args.img_size
 MAX_BALL_SPEED = 50.0
-AGENT_JEPA, AGENT_OPP = "first_0", "second_0"
+AGENT_JEPA, AGENT_OPP = "second_0", "first_0"   # JEPA=second_0=top, human=first_0=bottom
 
 env = tennis_v3.parallel_env(render_mode="rgb_array",
                              auto_rom_install_path=_rom_dir())
@@ -83,8 +84,8 @@ def _vel(seq, cap):
 schema = pa.schema([
     pa.field("episode_idx", pa.int32()),
     pa.field("step_idx", pa.int32()),
-    pa.field("action", pa.int32()),       # first_0 = JEPA (what the WM is conditioned on)
-    pa.field("action_opp", pa.int32()),   # second_0 = human/opponent (reference)
+    pa.field("action", pa.int32()),        # second_0 = JEPA/top (what the WM is conditioned on)
+    pa.field("action_human", pa.int32()),  # first_0 = human/bottom (reference)
     pa.field("pixels", pa.binary()),
     pa.field("player_x", pa.float32()),
     pa.field("player_y", pa.float32()),
@@ -100,7 +101,7 @@ os.makedirs(os.path.dirname(args.out), exist_ok=True)
 batches = []
 current_frames = 0
 ep = 0
-buf = {k: [] for k in ["action", "action_opp", "pixels",
+buf = {k: [] for k in ["action", "action_human", "pixels",
                        "player_x", "player_y", "enemy_x", "enemy_y", "ball_x", "ball_y"]}
 
 print(f"Collecting {args.frames} transitions at {IMG_SIZE}px, random policy (both agents)...")
@@ -115,7 +116,7 @@ def flush_episode():
         pa.array([ep] * n, type=pa.int32()),
         pa.array(list(range(n)), type=pa.int32()),
         pa.array(buf["action"], type=pa.int32()),
-        pa.array(buf["action_opp"], type=pa.int32()),
+        pa.array(buf["action_human"], type=pa.int32()),
         pa.array(buf["pixels"], type=pa.binary()),
         pa.array(buf["player_x"], type=pa.float32()),
         pa.array(buf["player_y"], type=pa.float32()),
@@ -152,7 +153,7 @@ while current_frames < args.frames:
 
     # 3. Save aligned transition.
     buf["action"].append(a_jepa)
-    buf["action_opp"].append(a_opp)
+    buf["action_human"].append(a_opp)
     buf["pixels"].append(encode_frame(frame))
     for k in ["player_x", "player_y", "enemy_x", "enemy_y", "ball_x", "ball_y"]:
         buf[k].append(float(s[k]))
