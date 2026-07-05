@@ -54,6 +54,8 @@ env = [
     "stable_baselines3>=2.0.0",
     "craftax>=1.5.0",
     "ale-py",
+    "pettingzoo>=1.24.1",       # 2-player Atari (tennis_v3) for human-vs-JEPA collection
+    "multi-agent-ale-py>=0.1.12",  # multi-agent ALE backend behind pettingzoo.atari
 ]
 
 format = [
