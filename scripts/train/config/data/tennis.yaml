@@ -1,0 +1,17 @@
+dataset:
+  num_steps: ${eval:'${wm.num_preds} + ${wm.history_size}'}
+  # WM action-chunk stride (NOT the ALE collection frameskip — that was baked into
+  # the data at fs4). Keep 1: one action per predicted step.
+  frameskip: 1
+  # Absolute path to the collected fs4 / 128px Tennis dataset. load_dataset() uses an
+  # absolute path directly; change this if you move the .lance directory.
+  # Multi-agent (PettingZoo tennis_v3) dataset — the true 2-player env we play in.
+  # 'action' col = second_0 = JEPA = TOP player (what the WM is conditioned on);
+  # 'action_human' col = first_0 = human = BOTTOM player. Swap to tennis_128x128.lance
+  # for the single-agent dataset.
+  name: /home/saurav/projects/learcade/stable-worldmodel/datasets/tennis_ma_128x128.lance
+  keys_to_load:
+    - pixels
+    - action
+  keys_to_cache:
+    - action
