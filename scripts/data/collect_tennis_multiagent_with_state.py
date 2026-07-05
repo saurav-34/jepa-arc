@@ -55,11 +55,38 @@ parser.add_argument("--frameskip", type=int, default=4,
                     help="ALE frames per recorded transition (tennis_v3 is 1/step, so "
                          "we hold each action this many env-steps). Match the play stride.")
 parser.add_argument("--seed", type=int, default=0)
+parser.add_argument("--policy", choices=["heuristic", "random"], default="heuristic",
+                    help="heuristic = both players chase the ball's x and swing "
+                         "(produces real rallies/interceptions); random = uniform actions.")
+parser.add_argument("--epsilon", type=float, default=0.35,
+                    help="Under --policy heuristic, fraction of random actions mixed in. "
+                         "0.35 balances rallies/swings (interception states) with full "
+                         "18-action coverage the WM planner needs. Lower=tighter tracking "
+                         "but sparse action coverage; higher=more coverage, fewer rallies.")
 args = parser.parse_args()
 
 IMG_SIZE = args.img_size
 MAX_BALL_SPEED = 50.0
 AGENT_JEPA, AGENT_OPP = "second_0", "first_0"   # JEPA=second_0=top, human=first_0=bottom
+
+# ALE full-action-set ids used by the ball-chasing heuristic. Calibrated on this ROM:
+# RIGHT(3) -> player_x +40, LEFT(4) -> player_x -32 (same for both agents). Firing LOCKS
+# movement, so we MOVE with pure RIGHT/LEFT to align x, then FIRE(1) to swing once aligned.
+FIRE, RIGHT, LEFT = 1, 3, 4
+BALL_X_ADDR = 16
+PLAYER_X_ADDR = {"first_0": 26, "second_0": 27}   # RAM x-addr each agent controls
+ALIGN_DEADZONE = 6   # px: within this of the ball's x -> swing instead of moving
+
+
+def choose_action(ram, agent):
+    """Ball-chasing heuristic (with epsilon-random exploration): move the player's x
+    toward the ball's x, and swing when aligned. Random for --policy random or epsilon."""
+    if args.policy == "random" or random.random() < args.epsilon:
+        return random.randint(0, 17)
+    dx = int(ram[BALL_X_ADDR]) - int(ram[PLAYER_X_ADDR[agent]])
+    if abs(dx) <= ALIGN_DEADZONE:
+        return FIRE
+    return RIGHT if dx > 0 else LEFT
 
 env = tennis_v3.parallel_env(render_mode="rgb_array",
                              auto_rom_install_path=_rom_dir())
@@ -147,9 +174,12 @@ while current_frames < args.frames:
     frame = cv2.resize(raw, (IMG_SIZE, IMG_SIZE), interpolation=interp)
     s = get_state()
 
-    # 2. Random action for each agent (good world-model coverage; no Tennis expert exists).
-    a_jepa = random.randint(0, env.action_space(AGENT_JEPA).n - 1)
-    a_opp = random.randint(0, env.action_space(AGENT_OPP).n - 1)
+    # 2. Choose actions. Heuristic: both players chase the ball's x and swing, so the
+    #    ball is actually returned -> rallies/interceptions in the data (with epsilon
+    #    random mixed in for coverage). `s` was just read from RAM above.
+    ram_now = ale.getRAM()
+    a_jepa = choose_action(ram_now, AGENT_JEPA)
+    a_opp = choose_action(ram_now, AGENT_OPP)
 
     # 3. Save aligned transition.
     buf["action"].append(a_jepa)
