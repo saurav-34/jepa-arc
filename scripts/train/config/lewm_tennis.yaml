@@ -41,7 +41,7 @@ trainer:
   gradient_clip_val: 1.0
 
 loader:
-  batch_size: 1
+  batch_size: 128
   num_workers: ${num_workers}
   drop_last: True
   persistent_workers: True
