@@ -56,7 +56,7 @@ optimizer:
 
 wm:
   history_size: 3
-  num_preds: 1
+  num_preds: 3
 
 model:
   _target_: stable_worldmodel.wm.lewm.LeWM
