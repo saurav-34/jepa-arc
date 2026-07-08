@@ -44,12 +44,20 @@ parser.add_argument("--train-split", type=float, default=0.9)
 parser.add_argument("--encoder-cache", type=str, default=None)
 parser.add_argument("--pred-cache", type=str, default=None)
 parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
+parser.add_argument("--img-size", type=int, default=224,
+                    help="Input resolution the world model was trained at (tennis LeWM: 128).")
+parser.add_argument("--state-cols", type=str,
+                    default="ball_x,ball_y,ball_vx,ball_vy,player_y,opp_y",
+                    help="Comma-separated state columns to decode. "
+                         "Tennis: player_x,enemy_x,ball_x,ball_y,ball_vy")
+parser.add_argument("--name", type=str, default="statehead",
+                    help="Output subfolder under $STABLEWM_HOME/checkpoints/.")
 args = parser.parse_args()
 
-IMG_SIZE   = 224
+IMG_SIZE   = args.img_size
 EMBED_DIM  = 192
-STATE_DIM  = 6
-STATE_COLS = ['ball_x', 'ball_y', 'ball_vx', 'ball_vy', 'player_y', 'opp_y']
+STATE_COLS = [c.strip() for c in args.state_cols.split(',') if c.strip()]
+STATE_DIM  = len(STATE_COLS)
 HISTORY    = 3   # predictor context length
 
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)

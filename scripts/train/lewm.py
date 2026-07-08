@@ -90,6 +90,28 @@ def lejepa_forward(self, batch, stage, cfg):
         f'{stage}/{k}': v.detach() for k, v in output.items() if 'loss' in k
     }
     self.log_dict(losses_dict, on_step=True, sync_dist=True)
+
+    # ---- collapse / copy-shortcut diagnostics (not part of the loss) ----
+    # If pred_loss ~= copy_baseline, the predictor is just copying the input
+    # frame instead of learning dynamics (the "too-easy target" shortcut).
+    with torch.no_grad():
+        # identity copy: output the same-position context frame unchanged
+        copy_baseline = (ctx_emb - tgt_emb).pow(2).mean()
+        # persistence: copy the LAST context frame to every predicted step
+        last_ctx = ctx_emb[:, -1:].expand_as(tgt_emb)
+        last_frame_baseline = (last_ctx - tgt_emb).pow(2).mean()
+        # per-dim std of embeddings across the batch (near 0 => collapse)
+        emb_flat = emb.reshape(-1, emb.size(-1))  # (B*T, D)
+        emb_std = emb_flat.std(dim=0).mean()
+        diag = {
+            f'{stage}/copy_baseline': copy_baseline,
+            f'{stage}/last_frame_baseline': last_frame_baseline,
+            # <1 means the predictor beats a plain copy; ~1 means it cheats
+            f'{stage}/pred_vs_copy_ratio': output['pred_loss'].detach()
+            / (copy_baseline + 1e-8),
+            f'{stage}/emb_std': emb_std,
+        }
+    self.log_dict(diag, on_step=True, sync_dist=True)
     return output
 
 

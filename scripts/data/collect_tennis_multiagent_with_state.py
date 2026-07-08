@@ -74,7 +74,9 @@ AGENT_JEPA, AGENT_OPP = "second_0", "first_0"   # JEPA=second_0=top, human=first
 # movement, so we MOVE with pure RIGHT/LEFT to align x, then FIRE(1) to swing once aligned.
 FIRE, RIGHT, LEFT = 1, 3, 4
 BALL_X_ADDR = 16
-PLAYER_X_ADDR = {"first_0": 26, "second_0": 27}   # RAM x-addr each agent controls
+PLAYER_X_ADDR = {"first_0": 27, "second_0": 26}   # RAM x-addr each agent controls
+# (verified from collected data: `action`/second_0 moves RAM[26]=player_x,
+#  `action_human`/first_0 moves RAM[27]=enemy_x)
 ALIGN_DEADZONE = 6   # px: within this of the ball's x -> swing instead of moving
 
 
@@ -131,7 +133,9 @@ ep = 0
 buf = {k: [] for k in ["action", "action_human", "pixels",
                        "player_x", "player_y", "enemy_x", "enemy_y", "ball_x", "ball_y"]}
 
-print(f"Collecting {args.frames} transitions at {IMG_SIZE}px, random policy (both agents)...")
+print(f"Collecting {args.frames} transitions at {IMG_SIZE}px, "
+      f"policy={args.policy}" + (f" (epsilon={args.epsilon})" if args.policy == "heuristic" else "")
+      + " (both agents)...")
 
 
 def flush_episode():
