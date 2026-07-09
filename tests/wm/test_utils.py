@@ -261,6 +261,19 @@ def test_load_pretrained_instantiate_called_with_config(tmp_path):
     assert mock_inst.call_args[0][0]['_target_'] == TINY_CONFIG['_target_']
 
 
+def test_load_pretrained_from_relative_path_in_cwd(tmp_path, monkeypatch):
+    checkpoint_dir = tmp_path / 'custom_ckpt'
+    checkpoint_dir.mkdir()
+    torch.save(TinyModel().state_dict(), checkpoint_dir / 'weights.pt')
+    (checkpoint_dir / 'config.json').write_text(json.dumps(TINY_CONFIG))
+    monkeypatch.chdir(tmp_path)
+
+    with patch('hydra.utils.instantiate', return_value=TinyModel()):
+        loaded = load_pretrained('custom_ckpt/weights.pt', cache_dir=tmp_path / 'cache')
+
+    assert isinstance(loaded, TinyModel)
+
+
 def test_load_pretrained_missing_checkpoint_raises(tmp_path):
     with pytest.raises(FileNotFoundError):
         load_pretrained('ghost/weights.pt', cache_dir=tmp_path)

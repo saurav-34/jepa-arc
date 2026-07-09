@@ -74,10 +74,26 @@ AGENT_JEPA, AGENT_OPP = "second_0", "first_0"   # JEPA=second_0=top, human=first
 # movement, so we MOVE with pure RIGHT/LEFT to align x, then FIRE(1) to swing once aligned.
 FIRE, RIGHT, LEFT = 1, 3, 4
 BALL_X_ADDR = 16
-PLAYER_X_ADDR = {"first_0": 27, "second_0": 26}   # RAM x-addr each agent controls
-# (verified from collected data: `action`/second_0 moves RAM[26]=player_x,
-#  `action_human`/first_0 moves RAM[27]=enemy_x)
+PLAYER_X_ADDR = {"first_0": 26, "second_0": 27}   # RAM x-addr each agent controls
+# (verified by direct wiggle-probe 2026-07-10: holding RIGHT on first_0 moves
+#  RAM[26]=player_x/bottom, holding RIGHT on second_0 moves RAM[27]=enemy_x/top;
+#  reproducible across seeds. The previous swapped mapping made both heuristic
+#  agents chase the ball relative to the OPPONENT's paddle, which produced the
+#  v2 dataset's degenerate anti-correlated paddle data — corr(player_x,enemy_x)
+#  = -0.98, corr(paddle,ball) ~= 0.07, paddles pinned at the walls.
+#  NOTE: this mapping holds at game 1; players change court ends after odd
+#  cumulative games (RAM[71]+RAM[72]), same rule the play script handles.)
 ALIGN_DEADZONE = 6   # px: within this of the ball's x -> swing instead of moving
+
+
+def own_x_addr(ram, agent):
+    """End-aware paddle address: RAM[26]/RAM[27] track court sides (bottom/top),
+    and players change ends after odd cumulative games (RAM[71]+RAM[72])."""
+    games = int(ram[71]) + int(ram[72])
+    first0_bottom = ((games + 1) // 2) % 2 == 0
+    if agent == "first_0":
+        return 26 if first0_bottom else 27
+    return 27 if first0_bottom else 26
 
 
 def choose_action(ram, agent):
@@ -85,7 +101,7 @@ def choose_action(ram, agent):
     toward the ball's x, and swing when aligned. Random for --policy random or epsilon."""
     if args.policy == "random" or random.random() < args.epsilon:
         return random.randint(0, 17)
-    dx = int(ram[BALL_X_ADDR]) - int(ram[PLAYER_X_ADDR[agent]])
+    dx = int(ram[BALL_X_ADDR]) - int(ram[own_x_addr(ram, agent)])
     if abs(dx) <= ALIGN_DEADZONE:
         return FIRE
     return RIGHT if dx > 0 else LEFT

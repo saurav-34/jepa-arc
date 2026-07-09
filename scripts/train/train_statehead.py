@@ -29,6 +29,8 @@ import torch.nn as nn
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset, random_split
 
+from stable_worldmodel.wm.jedi import JEDI
+from stable_worldmodel.wm.jedi.edm import latent_clamp
 from stable_worldmodel.wm.utils import load_pretrained
 
 parser = argparse.ArgumentParser()
@@ -89,7 +91,10 @@ def precompute_encoder_embeddings(model, dataset_path, cache_path, device, batch
         with torch.no_grad():
             x   = torch.from_numpy(pixels).to(device, dtype=next(model.encoder.parameters()).dtype)
             cls = model.encoder(x, interpolate_pos_encoding=True).last_hidden_state[:, 0]
-            emb = model.projector(cls).float().cpu().numpy()
+            emb = model.projector(cls)
+            if isinstance(model, JEDI):   # match JEDI.encode's soft clamp
+                emb = latent_clamp(emb, model.latent_clamp)
+            emb = emb.float().cpu().numpy()
 
         embeddings[start:end] = emb
         if (start // batch_size) % 20 == 0:
@@ -161,8 +166,12 @@ def precompute_predictor_embeddings(model, dataset_path, encoder_embs,
             z_t    = torch.from_numpy(z_ctx).to(device, dtype=enc_dtype)    # (B, 3, 192)
             a_t    = torch.tensor(acts, dtype=torch.long, device=device)     # (B, 3)
             a_emb  = model.action_encoder(a_t)                               # (B, 3, 192)
-            preds  = model.predictor(z_t, a_emb)                             # (B, 3, 192)
-            z_pred = model.pred_proj(preds[:, -1])                           # (B, 192)
+            if isinstance(model, JEDI):
+                # inference-matched path: few-step Euler sampling of z_{t+3}
+                z_pred = model.predict(z_t, a_emb)[:, -1]                    # (B, 192)
+            else:
+                preds  = model.predictor(z_t, a_emb)                         # (B, 3, 192)
+                z_pred = model.pred_proj(preds[:, -1])                       # (B, 192)
             z_pred = z_pred.float().cpu().numpy()
 
         pred_embs[start:end]     = z_pred
@@ -252,10 +261,12 @@ def main():
 
     # save normalization stats
     from stable_worldmodel.data.utils import get_cache_dir
-    cache_dir = get_cache_dir(sub_folder='checkpoints') / 'statehead'
+    cache_dir = get_cache_dir(sub_folder='checkpoints') / args.name
     cache_dir.mkdir(parents=True, exist_ok=True)
     np.save(cache_dir / "state_mean.npy", state_mean)
     np.save(cache_dir / "state_std.npy",  state_std)
+    with open(cache_dir / "state_cols.json", "w") as f:
+        __import__('json').dump(STATE_COLS, f)
 
     # dataloaders
     dataset  = StateHeadDataset(embeddings, states, state_mean, state_std)

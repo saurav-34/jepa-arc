@@ -98,11 +98,14 @@ def _resolve(name: str, cache_dir: Path) -> tuple[Path, dict]:
     """Return ``(checkpoint_path, config_dict)`` for *name*.
 
     Resolution order:
-      1. ``<cache_dir>/<name>``  as a ``.pt`` file
-      2. ``<cache_dir>/<name>``  as a folder
-      3. HuggingFace repo (cached locally under ``<cache_dir>/<user>/<repo>/``)
+      1. An existing local path (absolute or relative to the current working dir)
+      2. ``<cache_dir>/<name>``  as a ``.pt`` file
+      3. ``<cache_dir>/<name>``  as a folder
+      4. HuggingFace repo (cached locally under ``<cache_dir>/<user>/<repo>/``)
     """
-    local = cache_dir / name
+    local = Path(name).expanduser()
+    if not local.is_absolute() and not local.exists():
+        local = cache_dir / local
 
     # format 1: explicit .pt file
     if local.suffix == '.pt':

@@ -1,0 +1,136 @@
+defaults:
+  - launcher: local
+  - data: tennis
+  - _self_          # last, so this file's wandb block overrides launcher/local.yaml's
+
+output_model_name: jedi_tennis
+subdir: ${hydra:job.id}
+
+# wandb enabled by default for this config (launcher/local.yaml disables it).
+# entity must be YOUR wandb account, not the upstream `stable-wm` team.
+wandb:
+  enabled: true
+  config:
+    entity: ssaurav3425-iiser-bhopal   # your wandb default entity (not the HF username)
+    project: tennis-jepa
+    name: ${output_model_name}
+    id: ${subdir}
+    resume: allow
+    log_model: False
+
+num_workers: 6
+train_split: 0.9
+seed: 3072
+# 128px so the small/fast Tennis ball survives the resize (at 64px it was sub-pixel).
+img_size: 128
+# patch 8 -> 16x16 = 256 tokens at 128px. Small patches keep the tiny ball from being
+# averaged into a coarse token (bigger patches would hurt small-object retention).
+patch_size: 8
+encoder_scale: tiny
+embed_dim: 192
+encoder_resnet9: False
+train_value_function: False
+dump_object: True
+# JEDI: encoder+projector train at a fraction of the denoiser LR (paper: 0.3x)
+encoder_lr_scale: 0.3
+
+trainer:
+  max_epochs: 100
+  devices: auto
+  accelerator: gpu
+  precision: bf16
+  gradient_clip_val: 1.0
+
+loader:
+  batch_size: 128
+  num_workers: ${num_workers}
+  drop_last: True
+  persistent_workers: True
+  prefetch_factor: 3
+  pin_memory: True
+  shuffle: True
+
+optimizer:
+  type: AdamW
+  lr: 5e-5
+  weight_decay: 1e-3
+
+wm:
+  history_size: 3
+  # No fixed prediction shift in JEDI (training unfolds ALL next-step windows
+  # in the sequence); this only sets sequence length via data config:
+  # num_steps = num_preds + history_size.
+  num_preds: 3
+
+# EDM diffusion settings (Karras 2022 / DIAMOND dynamics-model defaults).
+# sigma_data: latents are tanh-clamped to (-3, 3); measure the empirical std
+# after a few epochs and adjust if it drifts far from 1.
+diffusion:
+  sigma_data: 1.0
+  p_mean: -0.4
+  p_std: 1.2
+  sigma_min: 2e-3
+  sigma_max: 80.0
+  rho: 7.0
+  sample_steps: 3
+  latent_clamp: 3.0
+  # Conditioning switch (paper Sec. on random switching): per training batch,
+  # with this probability, condition on the denoiser's own sampled rollout
+  # latents instead of encoder latents. Set 0 to recover pure teacher forcing.
+  self_cond_prob: 0.5
+
+model:
+  _target_: stable_worldmodel.wm.jedi.JEDI
+  latent_clamp: ${diffusion.latent_clamp}
+  sample_steps: ${diffusion.sample_steps}
+  sigma_min: ${diffusion.sigma_min}
+  sigma_max: ${diffusion.sigma_max}
+  rho: ${diffusion.rho}
+  encoder:
+    _target_: stable_pretraining.backbone.utils.vit_hf
+    size: ${encoder_scale}
+    patch_size: ${patch_size}
+    image_size: ${img_size}
+    pretrained: false
+    use_mask_token: false
+  denoiser:
+    _target_: stable_worldmodel.wm.jedi.module.Denoiser
+    history_size: ${wm.history_size}
+    input_dim: ${embed_dim}
+    hidden_dim: ${embed_dim}
+    output_dim: ${embed_dim}
+    depth: 6
+    heads: 16
+    mlp_dim: 2048
+    dim_head: 64
+    dropout: 0.1
+    sigma_data: ${diffusion.sigma_data}
+  action_encoder:
+    _target_: torch.nn.Embedding
+    num_embeddings: 18  # ALE Tennis is Discrete(18), not 6 like Pong
+    embedding_dim: ${embed_dim}
+  projector:
+    _target_: stable_worldmodel.wm.lewm.module.MLP
+    input_dim: ${embed_dim}
+    output_dim: ${embed_dim}
+    hidden_dim: 2048
+    # LayerNorm, not BatchNorm1d: BN's eval-mode running stats lag the training
+    # encoder, so validation/rollout latents came out mis-scaled (emb_std 0.4-0.9
+    # instead of ~1), breaking the sigma_data=1 calibration at inference.
+    norm_fn:
+      _target_: torch.nn.LayerNorm
+      _partial_: true
+
+loss:
+  # JEDI's stop-grad targets should prevent collapse on their own; SIGReg is
+  # kept as a safety net at a low weight. Ablate to 0 only once BOTH emb_std
+  # stays ~1 AND fit/emb_effective_rank keeps climbing (SIGReg cannot see
+  # low-rank collapse, so emb_std alone is not sufficient).
+  # Reference points for fit/sigreg_loss (B=128, T=6, D=192): ~1.0 is the
+  # exact-N(0,I) floor (~1.5 after the tanh clamp) — it never reaches 0.
+  # Values of 40-70 mean near-constant / badly mis-scaled embeddings.
+  sigreg:
+    weight: 0.01
+    kwargs:
+      knots: 17
+      num_proj: 1024
